@@ -1,0 +1,42 @@
+[
+  {
+    "comment": "Allow HTTP from any",
+    "policy": "allow",
+    "protocol": "tcp",
+    "srcCidr": "any",
+    "srcPort": "any",
+    "destCidr": "any",
+    "destPort": "80",
+    "syslogEnabled": false
+  },
+  {
+    "comment": "Deny Telnet from any",
+    "policy": "deny",
+    "protocol": "tcp",
+    "srcCidr": "any",
+    "srcPort": "any",
+    "destCidr": "any",
+    "destPort": "23",
+    "syslogEnabled": false
+  },
+  {
+    "comment": "Allow all internet access",
+    "policy": "allow",
+    "protocol": "any",
+    "destCidr": "any",
+    "destPort": "any",
+    "srcCidr": "any",
+    "srcPort": "any",
+    "syslogEnabled": false
+  },
+  {
+    "comment": "Block access to social media",
+    "policy": "deny",
+    "protocol": "tcp",
+    "destCidr": "any",
+    "destPort": "443",
+    "srcCidr": "any",
+    "srcPort": "any",
+    "syslogEnabled": false
+  }
+]

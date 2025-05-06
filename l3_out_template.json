@@ -1,0 +1,22 @@
+[
+  {
+    "comment": "Allow all internet access",
+    "policy": "allow",
+    "protocol": "any",
+    "destCidr": "0.0.0.0/0",
+    "destPort": "any",
+    "srcCidr": "192.168.1.0/24",
+    "srcPort": "any",
+    "syslogEnabled": false
+  },
+  {
+    "comment": "Block access to social media",
+    "policy": "deny",
+    "protocol": "tcp",
+    "destCidr": "157.240.0.0/16",
+    "destPort": "443",
+    "srcCidr": "GRP(644577696667403252),OBJ(644577696667413842)",
+    "srcPort": "any",
+    "syslogEnabled": false
+  }
+]
