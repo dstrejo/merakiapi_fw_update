@@ -10,9 +10,11 @@ def log_result(log_file, message):
 def get_all_organizations(dashboard):
     return dashboard.organizations.getOrganizations()
 
-def get_networks_by_tag(dashboard, org_id, tag):
-    all_networks = dashboard.organizations.getOrganizationNetworks(org_id)
-    return [net for net in all_networks if tag in net.get('tags', [])]
+def get_networks_in_org(dashboard, org_id):
+    return dashboard.organizations.getOrganizationNetworks(org_id)
+
+def filter_networks_by_tag(networks, tag):
+    return [net for net in networks if tag in net.get('tags', [])]
 
 def load_rules_from_file(filepath):
     with open(filepath, 'r') as f:
@@ -57,7 +59,6 @@ def main():
         return
 
     config_file = input(f"Enter path to {rule_type} firewall rules JSON file: ").strip()
-    network_tag = input("Enter the Network Tag to filter networks: ").strip()
     dry_run = input("Enable dry-run mode (no changes applied)? (y/n): ").strip().lower() == 'y'
 
     rules = load_rules_from_file(config_file)
@@ -70,7 +71,8 @@ def main():
         print("⚠️ Aborted by user.")
         return
 
-    dashboard = meraki.DashboardAPI(api_key, output_log=False, print_console=True, certificate_path='../../certificate.pem')
+    # Note: adjust/remove certificate_path as appropriate for your environment
+    dashboard = meraki.DashboardAPI(api_key, output_log=False, print_console=True)
 
     orgs = get_all_organizations(dashboard)
     print("\nAvailable Organizations:")
@@ -79,52 +81,68 @@ def main():
     org_index = int(input("Select an organization by number: ")) - 1
     org_id = orgs[org_index]['id']
 
-    tagged_networks = get_networks_by_tag(dashboard, org_id, network_tag)
-    if not tagged_networks:
-        print(f"❌ No networks found with tag '{network_tag}'.")
-        return
+    networks = get_networks_in_org(dashboard, org_id)
 
-    print(f"\nNetworks with tag '{network_tag}':")
-    for idx, net in enumerate(tagged_networks):
+    tag_filter = input("\nEnter a Network Tag to filter by (or press Enter to skip): ").strip()
+    if tag_filter:
+        networks = filter_networks_by_tag(networks, tag_filter)
+        if not networks:
+            print(f"❌ No networks found with tag '{tag_filter}'.")
+            return
+        print(f"\nFiltered Networks with tag '{tag_filter}':")
+    else:
+        print("\nAll Networks:")
+
+    for idx, net in enumerate(networks):
         print(f"{idx + 1}: {net['name']} (ID: {net['id']})")
 
-    choice = input("Do you want to UPDATE firewall rules for ALL tagged networks? (y/n): ").strip().lower()
+    choice = input("\nDo you want to UPDATE firewall rules for ALL listed networks? (y/n): ").strip().lower()
     if choice == 'y':
-        selected_networks = tagged_networks
+        selected_networks = networks
     else:
         indices = input("Enter the numbers of the networks to update, separated by commas: ")
         indices = [int(i.strip()) - 1 for i in indices.split(',') if i.strip().isdigit()]
-        selected_networks = [tagged_networks[i] for i in indices]
+        selected_networks = [networks[i] for i in indices]
 
-    final_confirm = input("\n⚠️ Type 'CONFIRM' to apply the firewall rules to these networks: ").strip()
-    if final_confirm != 'CONFIRM':
-        print("❌ Aborted by user at final step.")
-        return
-
+    # Prepare log + backup dir
     timestamp = datetime.datetime.now().strftime('%Y%m%d_%H%M%S')
     log_file = f"firewall_update_log_{rule_type}_{timestamp}.txt"
     backup_dir = f"firewall_backups_{rule_type}_{timestamp}"
     os.makedirs(backup_dir, exist_ok=True)
 
     log_result(log_file, f"=== Firewall {rule_type.capitalize()} Update Log: {timestamp} ===")
-    log_result(log_file, f"Dry Run Mode: {'YES' if dry_run else 'NO'}")
-    log_result(log_file, f"Target Networks (tag={network_tag}): {len(tagged_networks)}\n")
+    log_result(log_file, f"Dry Run Mode: {'YES' if dry_run else 'NO'}\n")
 
+    # Final confirmation before applying
+    print("\n🚨 FINAL CHECK")
+    print("The script is about to apply changes to the following networks:")
+    for net in selected_networks:
+        print(f"- {net['name']} (ID: {net['id']})")
+
+    final_confirm = input("\n⚠️ Are you sure you want to proceed with these changes? Type 'CONFIRM' to continue: ").strip()
+    if final_confirm != 'CONFIRM':
+        print("❌ Aborted by user at final validation step.")
+        return
+
+    # Apply changes
     for net in selected_networks:
         net_id = net['id']
         net_name = net['name']
         print(f"\n🔧 Processing: {net_name} (ID: {net_id})")
 
-        # Backup current rules
+        if dry_run:
+            msg = f"🟡 DRY RUN: Would update {rule_type} firewall rules for '{net_name}'"
+            print(msg)
+            log_result(log_file, msg)
+            continue
+
+        # Backup current rules (only when not dry-running to mirror alerts script behavior)
         success, result = backup_rules(dashboard, net_id, net_name, rule_type, backup_dir)
         if success:
             log_result(log_file, f"📦 Backed up current {rule_type} rules for '{net_name}' to: {result}")
         else:
             log_result(log_file, f"❌ Failed to backup {rule_type} rules for '{net_name}': {result}")
-            continue
-
-        if dry_run:
-            log_result(log_file, f"🟡 DRY RUN: Would apply {rule_type} firewall rules to '{net_name}'")
+            # Skip updates if backup failed to avoid risk
             continue
 
         # Apply new rules
